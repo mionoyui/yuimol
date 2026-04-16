@@ -1816,8 +1816,8 @@ packages:
   timestamp: 1759282883298
 - pypi: ./
   name: yuimol
-  version: 0.1.0
-  sha256: b048ecb6c6ef1b15b4ce49598fd5e1d439be061fff3716397c08b8204971e752
+  version: 0.1.1
+  sha256: 46e089d3cc06635a06c14df81f8f6560ffbda414e2b1fb52a4757c69fef72710
   requires_dist:
   - anthropic>=0.95.0,<0.96
   - httpx>=0.28.1,<0.29

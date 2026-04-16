@@ -47,7 +47,7 @@ pixi install
 echo 'from yuimol import __init_plugin__; __init_plugin__()' >> ~/.pymolrc
 ```
 
-`pixi run pymol` で起動したとき、pixi 環境の Python に `yuimol` がインストールされているため、このまま動作します。
+`pixi run yuimol` で起動したとき、pixi 環境の Python に `yuimol` がインストールされているため、このまま動作します。
 
 ### 5. API キーを設定
 
@@ -60,10 +60,10 @@ EOF
 
 または PyMOL 起動後にチャットパネルの **Settings** ボタンから設定できます。
 
-### 6. PyMOL を起動
+### 6. yuimolの起動
 
 ```bash
-pixi run pymol
+pixi run yuimol
 ```
 
 起動後、右側にチャットパネルが自動で開きます。
