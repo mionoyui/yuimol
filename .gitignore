@@ -1,0 +1,28 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+# pixi environments
+.pixi/*
+!.pixi/config.toml
+
+# PyMOL が fetch したファイル（~/.pymol/fetch/ に集約済みだが念のため）
+*.cif
+*.pdb
+*.mmcif
+*.sdf
+
+# 秘密情報
+.env
+
+# 生成画像
+*.png
+
+# Claude Code
+.claude/

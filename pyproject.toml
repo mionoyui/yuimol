@@ -1,0 +1,40 @@
+[project]
+name = "yuimol"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["anthropic>=0.95.0,<0.96", "httpx>=0.28.1,<0.29", "biopython>=1.87,<2"]
+
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["osx-arm64"]
+
+[tool.pixi.pypi-dependencies]
+yuimol = { path = ".", editable = true }
+
+[tool.pixi.tasks]
+test               = "pytest tests/unit -v"
+test-e2e           = "pymol -c -r tests/integration/test_e2e.py"
+test-visual        = "pymol -r tests/visual/color_residues_1tup.py"
+test-visual-af     = "pymol -r tests/visual/alphafold_vs_pdb.py"
+test-visual-cancer = "pymol -r tests/visual/cancer_mutations_p53.py"
+test-visual-domains= "pymol -r tests/visual/domains_af_p53.py"
+test-visual-render    = "pymol -r tests/visual/render_nice.py"
+test-visual-enzyme        = "pymol -r tests/visual/active_site_enzyme.py"
+test-visual-llm-enzyme    = "pymol -r tests/visual/llm_enzyme_chat.py"
+test-visual-llm-cancer    = "pymol -r tests/visual/llm_cancer_mutations.py"
+test-visual-llm-domains   = "pymol -r tests/visual/llm_domains_p53.py"
+test-visual-llm-kras      = "pymol -r tests/visual/llm_kras_plddt.py"
+test-visual-llm-interface = "pymol -r tests/visual/llm_complex_interface.py"
+test-visual-interface     = "pymol -r tests/visual/complex_interface.py"
+download-fixtures  = "python tests/fixtures/download.py"
+
+[tool.pixi.dependencies]
+pymol-open-source = ">=3.1.0,<4"
+python = "3.11.*"
+pytest = ">=8"
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit"]
+addopts = "-v"
