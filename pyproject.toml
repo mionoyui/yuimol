@@ -1,10 +1,13 @@
 [project]
 name = "yuimol"
-version = "0.1.1"
+version = "0.1.2"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = ["anthropic>=0.95.0,<0.96", "httpx>=0.28.1,<0.29", "biopython>=1.87,<2"]
+dependencies = ["anthropic>=0.95.0,<0.96", "httpx>=0.28.1,<0.29", "biopython>=1.87,<2", "fastmcp>=2.0,<3"]
+
+[project.scripts]
+yuimol-mcp = "yuimol.mcp_server:main"
 
 [tool.pixi.workspace]
 channels = ["conda-forge"]
@@ -14,7 +17,7 @@ platforms = ["osx-arm64"]
 yuimol = { path = ".", editable = true }
 
 [tool.pixi.tasks]
-yuimol = "pymol"
+yuimol = "pymol -R"
 test               = "pytest tests/unit -v"
 test-e2e           = "pymol -c -r tests/integration/test_e2e.py"
 test-visual        = "pymol -r tests/visual/color_residues_1tup.py"

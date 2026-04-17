@@ -21,6 +21,9 @@ wheels/
 # 秘密情報
 .env
 
+# MCP 設定（パスがローカル依存のため）
+.mcp.json
+
 # 生成画像
 *.png
 

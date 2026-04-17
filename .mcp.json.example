@@ -1,0 +1,25 @@
+{
+  "mcpServers": {
+    "togomcp": {
+      "command": "/PATH/TO/uv",
+      "args": [
+        "--directory",
+        "/PATH/TO/togomcp",
+        "run",
+        "togo-mcp-local"
+      ],
+      "env": {
+        "NCBI_API_KEY": "your-key-here"
+      }
+    },
+    "yuimol": {
+      "command": "/PATH/TO/.pixi/bin/pixi",
+      "args": [
+        "run",
+        "--manifest-path",
+        "/PATH/TO/yuimol/pyproject.toml",
+        "yuimol-mcp"
+      ]
+    }
+  }
+}

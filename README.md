@@ -58,7 +58,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 EOF
 ```
 
-または PyMOL 起動後にチャットパネルの **Settings** ボタンから設定できます。
+または yuimol 起動後にチャットパネルの **Settings** ボタンから設定できます。
 
 ### 6. yuimolの起動
 
@@ -98,6 +98,101 @@ zoom 1TUP
 チャットパネルの **kawaii** ボタンで高品質レイトレースレンダリングを実行します。
 
 ---
+
+## Claude Code MCP 連携
+
+yuimol は [MCP (Model Context Protocol)](https://modelcontextprotocol.io) サーバーを内蔵しています。Claude Code から yuimol を直接操作できます。
+
+### セットアップ
+
+1. yuimol を XML-RPC モードで起動（`pixi run yuimol` は `-R` オプション付きで起動します）
+
+2. `.mcp.json.example` をコピーしてパスを書き換える：
+
+```bash
+cp .mcp.json.example .mcp.json
+# .mcp.json の /PATH/TO/yuimol を実際のパスに変更
+```
+
+3. `pixi run yuimol` で再起動すると `run_pymol_command` ツールが使えるようになります。
+
+### 使用例
+
+Claude Code のチャットから以下のように直接 yuimolを操作できます：
+
+```
+1YCRのchain Aをシアンに、chain Bをマゼンダにして
+```
+
+### togomcp との連携
+
+[togomcp](https://github.com/dbcls/togomcp) を併用すると、Claude Code が PDB・UniProt・NCBI などの情報を調べながら、以下のような操作をそのままyuimolに反映できます。
+
+```
+1CA2（炭酸脱水酵素II）をロードして、active siteの残基をマゼンダ 金属配位残基ををシアンでそれぞれstick表示にして。
+```
+
+MCP経由の場合にPDBとのマッピングがうまくいかない可能性があるのでプロンプトに「UniProt 座標と PDB 残基番号のマッピングを意識して ~」という形でプロンプトを書くほうが安全です。
+
+
+**togo-mcp のセットアップ：**
+yuimolと別のディレクトリで、適宜cloneしてセットアップして下さい。
+
+uvを使うと便利です
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+```bash
+git clone https://github.com/dbcls/togomcp.git
+cd togomcp
+uv sync
+```
+
+NCBI API キーは [https://www.ncbi.nlm.nih.gov/datasets/docs/v2/api/api-keys/](https://www.ncbi.nlm.nih.gov/datasets/docs/v2/api/api-keys/) から取得できます。
+
+**yuimolの`.mcp.json` に以下を追加：**
+
+```json
+{
+  "mcpServers": {
+    "togomcp": {
+      "command": "/PATH/TO/uv", # which uv
+      "args": [
+        "--directory",
+        "/PATH/TO/togomcp", # togomcpをcloneしたPATH
+        "run",
+        "togo-mcp-local"
+      ],
+      "env": {
+        "NCBI_API_KEY": "your-key-here"
+      }
+    },
+    "yuimol": {
+      "command": "/PATH/TO/.pixi/bin/pixi", # which pixi
+      "args": [
+        "run",
+        "--manifest-path",
+        "/PATH/TO/yuimol/pyproject.toml", # yuimolをcloneしたPATH
+        "yuimol-mcp"
+      ]
+    }
+  }
+}
+```
+
+**Claude Codeからtogo-mcpとyuimol-mcpにアクセス**
+
+```
+# cd ~/PATH/TO/yuimol などとしてyuimolのディレクトリで
+claude --mcp-config .mcp.json
+```
+
+この構成で Claude Code は togo-mcp でタンパク質情報を調べ、yuimol で PyMOL に直接描画する連携ができます。
+
+---
+
+以下はMCPを使わないときの内容です
 
 ## UniProt 座標 → PDB 残基番号のマッピング
 
