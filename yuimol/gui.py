@@ -12,10 +12,19 @@ Qt GUI コンポーネント
 
 import json
 import os
+import queue as _queue
 
 from .agent import run_agent_loop, DEFAULT_MODEL
 from .commands import is_pymol_command
 from .tools import TOOL_DISPATCH, tool_run_pymol_command, tool_render_nice
+
+# MCP サーバーなど外部スレッドからチャットパネルにメッセージを送るためのキュー
+_mcp_log_queue: _queue.Queue = _queue.Queue()
+
+
+def log_from_mcp(text: str, role: str = "tool") -> None:
+    """スレッドセーフ。MCP サーバーのスクリプトから呼び出す。"""
+    _mcp_log_queue.put((role, text))
 
 
 _ENV_PATH = os.path.expanduser("~/.pymol/startup/yuimol/.env")
@@ -245,6 +254,10 @@ class ChatPanel:
                     self._history: list[dict] = []
                     self._worker = None
                     self._build_ui()
+                    # MCP ログキューを 300ms ごとにポーリング
+                    self._mcp_timer = QtCore.QTimer(self)
+                    self._mcp_timer.timeout.connect(self._poll_mcp_log)
+                    self._mcp_timer.start(300)
 
                 def _build_ui(self):
                     container = QtWidgets.QWidget()
@@ -286,6 +299,15 @@ class ChatPanel:
 
                     self.setWidget(container)
                     self.setMinimumWidth(300)
+
+                def _poll_mcp_log(self):
+                    import yuimol.gui as _mod
+                    while not _mod._mcp_log_queue.empty():
+                        try:
+                            role, text = _mod._mcp_log_queue.get_nowait()
+                            self._append(role, text)
+                        except Exception:
+                            pass
 
                 def _open_settings(self):
                     SettingsDialog.open(parent=self)
@@ -416,10 +438,21 @@ class ChatPanel:
                             '<tr><td style="background:#fadbd8;color:#c0392b;padding:8px 10px;">'
                             f'<b>Error</b><br>{safe_text}</td></tr></table>'
                         )
+                    elif role == "html":
+                        # HTML をエスケープせずそのまま挿入（MCP サマリーテーブルなど）
+                        html = (
+                            '<div style="padding:4px 6px;border-top:2px solid #3498db;">'
+                            f'{text}</div>'
+                        )
                     else:
                         html = f'<div style="padding:4px;">{safe_text}</div>'
 
+                    cursor = self._display.textCursor()
+                    cursor.movePosition(cursor.End)
+                    self._display.setTextCursor(cursor)
                     self._display.insertHtml(html)
+                    cursor.movePosition(cursor.End)
+                    self._display.setTextCursor(cursor)
                     self._display.insertHtml("<br>")
                     sb = self._display.verticalScrollBar()
                     sb.setValue(sb.maximum())
