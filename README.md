@@ -51,6 +51,8 @@ echo 'from yuimol import __init_plugin__; __init_plugin__()' >> ~/.pymolrc
 
 ### 5. API キーを設定
 
+> **Claude Code MCP 経由で試す場合は API キー不要です。** `run_pymol_command` ツールを使うだけなら設定不要。チャットパネル（yuimol 内蔵の LLM チャット）から操作する場合のみ必要です。今後はClaude Code経由をベースにする方向で考えていますので、[Claude Code MCP 連携](#claude-code-mcp-連携)の設定をおすすめします
+
 ```bash
 mkdir -p ~/.pymol/startup/yuimol
 cat > ~/.pymol/startup/yuimol/.env << 'EOF'

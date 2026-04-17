@@ -246,10 +246,6 @@ class ChatPanel:
                     self._worker = None
                     self._build_ui()
 
-                    # APIキー未設定なら起動時にダイアログを表示
-                    if not os.environ.get("ANTHROPIC_API_KEY"):
-                        QtCore.QTimer.singleShot(300, self._open_settings)
-
                 def _build_ui(self):
                     container = QtWidgets.QWidget()
                     layout = QtWidgets.QVBoxLayout(container)
