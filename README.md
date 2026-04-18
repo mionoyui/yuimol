@@ -127,6 +127,8 @@ cp .mcp.json.example .mcp.json
 | `get_loaded_structures` | ロード済みオブジェクト名を確認 |
 | `fetch_uniprot_annotations` | UniProt アノテーション取得（活性部位・ドメインなど） |
 | `color_residues_uniprot` | **UniProt 座標 → PDB 残基番号の自動マッピング付き色付け** |
+| `get_surface_residues` | **SASA 計算で表面露出残基を取得（結合面・エピトープ解析）** |
+| `show_annotation_summary` | 色付け結果と UniProt アノテーションをパネルに表示 |
 | `color_by_plddt` | AlphaFold pLDDT カラースキーム適用 |
 | `reset_colors` | 色・選択リセット |
 

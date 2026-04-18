@@ -11,6 +11,7 @@ Claude Code からコマンドを直接実行できるようにする。
   fetch_uniprot_annotations: UniProt アノテーション取得
   color_residues_uniprot   : UniProt 座標 → PDB 残基番号マッピングして色付け
   show_annotation_summary  : 色付け結果と UniProt アノテーションをパネルに表示
+  get_surface_residues     : SASA 計算で表面露出残基を取得
   color_by_plddt           : AlphaFold pLDDT カラースキーム適用
   reset_colors             : 色・選択リセット
 
@@ -30,6 +31,9 @@ from yuimol.constants import THREE_TO_ONE
 
 # セッション内の色付け履歴（show_annotation_summary で使用）
 _colored_log: list[dict] = []
+
+# セッション内の SASA 計算結果（object_name → {resi: sasa}）
+_sasa_log: dict[str, dict[int, float]] = {}
 
 PYMOL_XMLRPC_URL = "http://localhost:9123/RPC2"
 _CONN_ERROR = (
@@ -65,6 +69,51 @@ def _log_to_panel(proxy: xmlrpc.client.ServerProxy, text: str, role: str = "tool
         proxy.do(f"/import yuimol.gui as _g; _g.log_from_mcp('{safe}', '{role}')")
     except Exception:
         pass
+
+
+_HYDROPHOBIC = {"ALA", "VAL", "LEU", "ILE", "MET", "PHE", "TRP", "PRO", "TYR"}
+
+
+def _log_sasa_panel(
+    proxy: xmlrpc.client.ServerProxy,
+    object_name: str,
+    all_residues: list[dict],
+    surface: list[dict],
+    threshold: float,
+) -> None:
+    """SASA 計算結果をチャットパネルに HTML テーブルで表示する。"""
+    total = len(all_residues)
+    n_surf = len(surface)
+    pct = round(100 * n_surf / total) if total else 0
+
+    # 高露出疎水性残基（結合面設計に最も重要）
+    hydro_surface = [r for r in surface if r["resn"] in _HYDROPHOBIC]
+    hydro_surface = sorted(hydro_surface, key=lambda r: -r["sasa"])[:12]
+
+    rows_html = "".join(
+        f'<tr>'
+        f'<td style="padding:2px 6px;font-family:monospace">{r["resn"]}{r["resi"]}</td>'
+        f'<td style="padding:2px 6px">{r["chain"]}</td>'
+        f'<td style="padding:2px 6px">{r["sasa"]:.0f}</td>'
+        f'<td style="padding:2px 0">'
+        f'<span style="display:inline-block;width:{min(int(r["sasa"]/2), 80)}px;'
+        f'height:8px;background:#e67e22;border-radius:2px"></span>'
+        f'</td></tr>'
+        for r in hydro_surface
+    )
+
+    html = (
+        f'<b style="font-size:13px">SASA 表面解析 — {object_name}</b>'
+        f'<span style="color:#7f8c8d;font-size:11px"> threshold {threshold} Å²</span><br>'
+        f'<span style="font-size:12px">表面露出: <b>{n_surf}</b>/{total} 残基 ({pct}%)</span><br>'
+        f'<div style="color:#2c3e50;font-size:11px;margin-top:5px">高露出 疎水性残基（結合面候補）</div>'
+        f'<table style="width:100%;font-size:12px;border-collapse:collapse;margin-top:2px">'
+        f'<tr style="border-bottom:1px solid #e67e22;color:#e67e22">'
+        f'<td><b>残基</b></td><td><b>Chain</b></td><td><b>SASA (Å²)</b></td><td></td></tr>'
+        f'{rows_html}'
+        f'</table>'
+    )
+    _log_to_panel(proxy, html, role="html")
 
 
 def _get_struct_residues(
@@ -360,8 +409,11 @@ def show_annotation_summary(
         for e in colored_entries:
             all_colored_uniprot |= e["uniprot_positions"]
 
+        # SASA マップ（object_name → {pymol_resi: sasa}）
+        sasa_map: dict[int, float] = _sasa_log.get(object_name, {})
+
         # feature ごとに「色付けしたか」を判定
-        colored_rows: list[tuple] = []   # (ftype, pos_str, color, sele)
+        colored_rows: list[tuple] = []   # (ftype, pos_str, color, sele, avg_sasa_str)
         other_rows: list[tuple] = []     # (ftype, pos_str)
 
         for ftype, entries in annotations.items():
@@ -378,19 +430,26 @@ def show_annotation_summary(
                 # この feature の位置と色付け済み位置が重なるか
                 overlap = feat_positions & all_colored_uniprot
                 if overlap:
-                    # どの color_residues_uniprot 呼び出しと対応するか
                     match = next(
                         (c for c in colored_entries if c["uniprot_positions"] & feat_positions),
                         None,
                     )
                     color = match["color"] if match else "?"
                     sele = match["selection_name"] if match else ""
-                    colored_rows.append((ftype, pos_str, color, sele))
+                    # SASA: match の pymol_resi と feature の重複残基の平均
+                    if match and sasa_map:
+                        pymol_overlap = match["positions"] & set(sasa_map.keys())
+                        vals = [sasa_map[r] for r in pymol_overlap if sasa_map.get(r, 0) > 0]
+                        avg_sasa = f"{sum(vals)/len(vals):.0f}" if vals else "—"
+                    else:
+                        avg_sasa = "—"
+                    colored_rows.append((ftype, pos_str, color, sele, avg_sasa))
                 else:
                     other_rows.append((ftype, pos_str))
 
         # HTML テーブルを構築
         subtitle = f"{organism} · " if organism else ""
+        has_sasa = bool(sasa_map)
         html_parts = [
             f'<b style="font-size:13px">{protein_name}</b>'
             f'<span style="color:#7f8c8d;font-size:11px"> {subtitle}{uniprot_accession}'
@@ -402,16 +461,21 @@ def show_annotation_summary(
             return f'<span style="color:{css}">&#9679;</span>'
 
         if colored_rows:
+            sasa_header = '<td><b>SASA (Å²)</b></td>' if has_sasa else ""
             html_parts.append(
                 '<table style="width:100%;font-size:12px;border-collapse:collapse;margin-top:4px">'
                 '<tr style="border-bottom:1px solid #3498db;color:#3498db">'
-                '<td><b>Feature</b></td><td><b>Position</b></td><td><b>Color</b></td></tr>'
+                f'<td><b>Feature</b></td><td><b>Position</b></td><td><b>Color</b></td>{sasa_header}</tr>'
             )
-            for ftype, pos_str, color, sele in colored_rows:
+            for ftype, pos_str, color, sele, avg_sasa in colored_rows:
+                sasa_cell = (
+                    f'<td style="padding:2px 4px;color:#e67e22">{avg_sasa}</td>'
+                    if has_sasa else ""
+                )
                 html_parts.append(
                     f'<tr><td style="padding:2px 4px">{ftype}</td>'
                     f'<td style="padding:2px 4px;font-family:monospace">{pos_str}</td>'
-                    f'<td style="padding:2px 4px">{_dot(color)} {color}</td></tr>'
+                    f'<td style="padding:2px 4px">{_dot(color)} {color}</td>{sasa_cell}</tr>'
                 )
             html_parts.append("</table>")
 
@@ -435,6 +499,118 @@ def show_annotation_summary(
         return _CONN_ERROR
     except Exception as e:
         return f"Error: {e}"
+
+
+@mcp.tool()
+def get_surface_residues(
+    object_name: str,
+    chain: str | None = None,
+    sasa_threshold: float = 10.0,
+) -> str:
+    """
+    PyMOL の SASA（溶媒接触面積）計算で表面露出残基を特定して返す。
+
+    タンパク質の結合面設計・エピトープ分析に使う。
+    返り値の residues リストを UniProt アノテーション・togomcp 情報と
+    組み合わせることで、どの領域を標的にすべきかを推定できる。
+
+    Parameters
+    ----------
+    object_name : str
+        PyMOL オブジェクト名（get_loaded_structures で確認）
+    chain : str | None
+        チェーン ID（省略時は全チェーン）
+    sasa_threshold : float
+        SASA のカットオフ（Å²）。デフォルト 10.0。
+        この値以上の残基を「表面露出」として返す。
+    """
+    try:
+        proxy = _proxy()
+    except Exception:
+        return _CONN_ERROR
+
+    out_path = f"/tmp/yuimol_sasa_{os.getpid()}.json"
+    chain_part = f" and chain {chain}" if chain else ""
+    sel = f"({object_name}){chain_part}"
+
+    script = f"""
+import json
+from collections import defaultdict
+
+sel = "{sel}"
+
+# Save current b-factors before overwriting with SASA
+saved_b = {{}}
+cmd.iterate(sel, "saved_b[(chain, resi, name)] = b", space={{"saved_b": saved_b}})
+
+# Compute per-atom SASA stored into b-factors
+cmd.set("dot_solvent", 1)
+cmd.set("dot_density", 2)
+cmd.get_area(sel, load_b=1)
+
+# Aggregate SASA per residue
+resi_sasa = defaultdict(float)
+resi_name = {{}}
+
+def _acc(chain, resi, resn, b):
+    resi_sasa[(chain, resi)] += b
+
+def _acc_ca(chain, resi, resn, b):
+    resi_name[(chain, resi)] = resn
+
+cmd.iterate(sel, "_acc(chain, resi, resn, b)", space={{"_acc": _acc}})
+cmd.iterate(sel + " and name CA", "_acc_ca(chain, resi, resn, b)", space={{"_acc_ca": _acc_ca}})
+
+# Restore original b-factors
+cmd.alter(sel, "b = saved_b.get((chain, resi, name), b)", space={{"saved_b": saved_b}})
+
+result = []
+for (ch, ri), sasa in sorted(resi_sasa.items(), key=lambda x: (-x[1], x[0])):
+    result.append({{
+        "chain": ch,
+        "resi": int(ri),
+        "resn": resi_name.get((ch, ri), "UNK"),
+        "sasa": round(sasa, 1),
+    }})
+
+open("{out_path}", "w").write(json.dumps(result))
+"""
+
+    try:
+        _run_script_in_pymol(proxy, script)
+
+        if not os.path.exists(out_path):
+            return json.dumps({"error": "SASA calculation failed (no output file)"})
+
+        with open(out_path) as f:
+            all_residues: list[dict] = json.load(f)
+
+        surface = [r for r in all_residues if r["sasa"] >= sasa_threshold]
+
+        # セッション保存：resi → sasa のマップ
+        _sasa_log[object_name] = {r["resi"]: r["sasa"] for r in all_residues}
+
+        # チャットパネルに SASA サマリーを表示
+        _log_sasa_panel(proxy, object_name, all_residues, surface, sasa_threshold)
+
+        return json.dumps({
+            "object_name": object_name,
+            "chain": chain,
+            "sasa_threshold": sasa_threshold,
+            "total_residues": len(all_residues),
+            "surface_residue_count": len(surface),
+            "surface_residues": surface,
+        })
+
+    except ConnectionRefusedError:
+        return _CONN_ERROR
+    except Exception as e:
+        return f"Error: {e}"
+    finally:
+        try:
+            os.unlink(out_path)
+        except Exception:
+            pass
 
 
 @mcp.tool()
