@@ -24,8 +24,9 @@ wheels/
 # MCP 設定（パスがローカル依存のため）
 .mcp.json
 
-# 生成画像
+# 生成画像（docs/images/ は除く）
 *.png
+!docs/images/*.png
 
 # Claude Code
 .claude/

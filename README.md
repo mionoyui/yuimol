@@ -137,10 +137,16 @@ cp .mcp.json.example .mcp.json
 ### 使用例
 
 ```
-1CA2をロードして、炭酸脱水酵素 IIの活性部位をマゼンタ、金属配位残基をシアンで stick 表示にして
-1YCRのchain Aをシアンに、chain Bをマゼンタにして
-KRASのAlphaFold構造をpLDDTで色付けして
+- 1YCRのchain Aをシアンに、chain Bをマゼンタにして
+- KRASのAlphaFold構造をpLDDTで色付けして
+- いまyuimolにある構造に結合するタンパク質をデザインするとしてどこが狙い目かを可視化して
 ```
+
+`カルモジュリン結合面解析例`
+```
+カルモジュリンに結合しそうなタンパク質をデザインするとしてどこを狙うと良さそうかをUniProtのデータとも照らしつつ、視覚的にわかりやすく可視化して
+```
+![カルモジュリン結合面解析](docs/images/yuimol-Calmodulin.png)
 
 ### togomcp との連携
 
@@ -149,6 +155,7 @@ KRASのAlphaFold構造をpLDDTで色付けして
 ```
 1CA2（炭酸脱水酵素II）をロードして、active siteの残基をマゼンタ、金属配位残基をシアンでそれぞれstick表示にして。
 ```
+![1CA2](docs/images/yuimol-1CA2.png)
 
 yuimol MCP の `color_residues_uniprot` が UniProt → PDB の座標マッピングを自動で行うため、番号のズレを気にせずそのまま指示できます。
 

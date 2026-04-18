@@ -63,10 +63,17 @@ def _run_script_in_pymol(proxy: xmlrpc.client.ServerProxy, script: str) -> None:
 
 
 def _log_to_panel(proxy: xmlrpc.client.ServerProxy, text: str, role: str = "tool") -> None:
-    """yuimol チャットパネルにログメッセージを表示する（スレッドセーフ）。"""
+    """yuimol チャットパネルにログメッセージを表示する（スレッドセーフ）。
+    tempファイル経由でコマンド長制限・エスケープ問題を回避する。
+    """
     try:
-        safe = text.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n")
-        proxy.do(f"/import yuimol.gui as _g; _g.log_from_mcp('{safe}', '{role}')")
+        tmp = f"/tmp/yuimol_panellog_{os.getpid()}.txt"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(text)
+        proxy.do(
+            f"/import yuimol.gui as _g;"
+            f" _g.log_from_mcp(open('{tmp}', encoding='utf-8').read(), '{role}')"
+        )
     except Exception:
         pass
 
