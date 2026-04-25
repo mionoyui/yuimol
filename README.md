@@ -254,17 +254,8 @@ Claude Code                         pixi run yuimol
    pip install git+https://github.com/mionoyui/yuimol.git
    ```
 
-4. 計算サーバー側の `.mcp.json` に追加：
-
-   ```json
-   {
-     "mcpServers": {
-       "yuimol": {
-         "command": "yuimol-mcp"
-       }
-     }
-   }
-   ```
+4. 計算サーバー側でtogomcp との連携を行う：
+   1. [togomcp との連携](#togomcp-との連携)を計算サーバーで行う
 
 5. 計算サーバーで Claude Code を起動：
 
