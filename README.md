@@ -215,6 +215,65 @@ claude --mcp-config .mcp.json
 
 この構成で Claude Code は togo-mcp でタンパク質情報を調べ、yuimol で PyMOL に直接描画する連携ができます。
 
+### 計算サーバーから使う
+
+ローカルの Mac で PyMOL を表示しながら、計算サーバー上の Claude Code から操作することができます。
+
+**仕組み：**
+
+```
+計算サーバー                        ローカル Mac
+Claude Code                         pixi run yuimol
+  └─ yuimol MCP ─→ localhost:9123 ──[SSH トンネル]──→ localhost:9123 ─→ PyMOL
+```
+
+**手順：**
+
+1. ローカルで yuimol を起動しておく：
+
+   ```bash
+   pixi run yuimol
+   ```
+
+2. SSH 接続時にリバースポートフォワーディングを指定する：
+
+   ```bash
+   ssh -R 9123:localhost:9123 user@remote-host
+   ```
+
+   `~/.ssh/config` に書いておくと毎回不要になります：
+
+   ```
+   Host remote-host
+       RemoteForward 9123 localhost:9123
+   ```
+
+3. 計算サーバー側に `yuimol-mcp` をインストール：
+
+   ```bash
+   pip install git+https://github.com/mionoyui/yuimol.git
+   ```
+
+4. 計算サーバー側の `.mcp.json` に追加：
+
+   ```json
+   {
+     "mcpServers": {
+       "yuimol": {
+         "command": "yuimol-mcp"
+       }
+     }
+   }
+   ```
+
+5. 計算サーバーで Claude Code を起動：
+
+   ```bash
+   claude --mcp-config .mcp.json
+   ```
+
+yuimol MCP は `localhost:9123` に接続しに行くため、SSH トンネルが張られていればローカルの PyMOL がそのまま操作対象になります。
+
 ---
 
 以下はMCPを使わないときの内容です
