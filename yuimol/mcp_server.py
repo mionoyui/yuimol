@@ -195,6 +195,40 @@ def run_pymol_command(command: str) -> str:
         return f"Error: {e}"
 
 
+def _fetch_alphafold_mcp(proxy, accession: str) -> str:
+    """EBI API で最新 CIF URL を取得 → PyMOL に直接 URL を渡してロード。
+    ローカル・リモート SSH 構成の両方で動作する（PyMOL 側がダウンロード）。
+    """
+    import httpx
+
+    accession = accession.upper().removeprefix("AF-").removesuffix("-F1")
+
+    try:
+        api_resp = httpx.get(
+            f"https://alphafold.ebi.ac.uk/api/prediction/{accession}",
+            timeout=15.0,
+            follow_redirects=True,
+        )
+        api_resp.raise_for_status()
+        entries = api_resp.json()
+    except Exception as e:
+        return f"Error: AlphaFold API error for {accession}: {e}"
+
+    if not entries:
+        return f"Error: No AlphaFold entry found for {accession}"
+
+    entry = entries[0]
+    cif_url = entry.get("cifUrl") or entry.get("pdbUrl")
+    object_name = entry.get("entryId", f"AF-{accession}-F1")
+
+    if not cif_url:
+        return f"Error: No download URL in AlphaFold entry for {accession}"
+
+    proxy.do(f"load {cif_url}, {object_name}")
+    proxy.do("hide everything, solvent")
+    return f"OK: fetched {object_name}"
+
+
 @mcp.tool()
 def fetch_structure(pdb_id: str, source: str = "pdb") -> str:
     """
@@ -209,9 +243,9 @@ def fetch_structure(pdb_id: str, source: str = "pdb") -> str:
     """
     try:
         proxy = _proxy()
-        fetch_id = pdb_id.upper()
         if source == "alphafold":
-            fetch_id = f"AF-{fetch_id}-F1"
+            return _fetch_alphafold_mcp(proxy, pdb_id.upper())
+        fetch_id = pdb_id.upper()
         proxy.do(f"fetch {fetch_id}")
         proxy.do("hide everything, solvent")
         return f"OK: fetched {fetch_id}"
