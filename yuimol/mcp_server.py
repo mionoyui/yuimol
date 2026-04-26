@@ -5,6 +5,7 @@ XML-RPC サーバー（pymol -R で起動）に接続し、
 Claude Code からコマンドを直接実行できるようにする。
 
 ツール一覧:
+  post_to_panel            : 分析結果テキストを yuimol GUI パネルに表示
   run_pymol_command        : 任意の PyMOL コマンド実行
   fetch_structure          : PDB / AlphaFold から構造をロード
   get_loaded_structures    : ロード済みオブジェクト一覧
@@ -156,6 +157,31 @@ def _get_struct_residues(
 # ---------------------------------------------------------------------------
 # MCP ツール
 # ---------------------------------------------------------------------------
+
+@mcp.tool()
+def post_to_panel(text: str, role: str = "assistant") -> str:
+    """
+    yuimol チャットパネルにメッセージを表示する。
+
+    Claude Code からの分析結果・解説をユーザーの PyMOL GUI に送るために使う。
+    構造解析や UniProt 調査の結果を説明するときは必ずこのツールで送ること。
+
+    Parameters
+    ----------
+    text : str
+        表示するテキスト（HTML 可）
+    role : str
+        "assistant"（デフォルト）, "tool", "html" のいずれか
+    """
+    try:
+        proxy = _proxy()
+        _log_to_panel(proxy, text, role)
+        return "OK: posted to panel"
+    except ConnectionRefusedError:
+        return _CONN_ERROR
+    except Exception as e:
+        return f"Error: {e}"
+
 
 @mcp.tool()
 def run_pymol_command(command: str) -> str:

@@ -53,6 +53,11 @@ LLM は UniProt 位置番号をそのまま指定すれば良い。PDB 番号へ
 - LLM に渡すデータは最小限に。UniProt のアノテーションは `_DEFAULT_FEATURE_TYPES` で絞っている
 - `Natural variant` / `Mutagenesis` はデフォルト非取得（p53 など 100KB 超になるため）。ユーザーが変異を明示的に求めたときだけ `include_variants=True` を渡す
 
+### MCP サーバー（mcp_server.py）での作業
+
+- Claude Code から MCP ツールで構造解析・調査を行ったあとは、必ず `post_to_panel` で結果テキストをユーザーの PyMOL GUI パネルに送ること
+- `post_to_panel` の `role` は通常 `"assistant"` を使う。HTML を渡す場合は `"html"` にする
+
 ### SYSTEM_PROMPT（constants.py）
 
 - `NEVER use run_pymol_command to color by resi` — 必ず `color_residues` ツールを使う
