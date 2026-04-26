@@ -21,8 +21,8 @@ Claude Code からコマンドを直接実行できるようにする。
     2. MCP サーバーを起動: yuimol-mcp (Claude Code が自動起動)
 """
 
+import base64
 import json
-import os
 import xmlrpc.client
 from fastmcp import FastMCP
 
@@ -50,30 +50,22 @@ def _proxy() -> xmlrpc.client.ServerProxy:
 
 
 def _run_script_in_pymol(proxy: xmlrpc.client.ServerProxy, script: str) -> None:
-    """一時スクリプトファイルを経由して PyMOL 内で Python を実行する。"""
-    script_path = f"/tmp/yuimol_script_{os.getpid()}.py"
-    with open(script_path, "w") as f:
-        f.write(script)
-    try:
-        proxy.do(f"run {script_path}")
-    finally:
-        try:
-            os.unlink(script_path)
-        except Exception:
-            pass
+    """base64 エンコードして PyMOL 内で exec() する。
+    ローカル PyMOL + リモート MCP サーバー構成でも動作する（ファイル不要）。
+    """
+    encoded = base64.b64encode(script.encode("utf-8")).decode("ascii")
+    proxy.do(f"/import base64 as _b64; exec(_b64.b64decode('{encoded}').decode('utf-8'))")
 
 
 def _log_to_panel(proxy: xmlrpc.client.ServerProxy, text: str, role: str = "tool") -> None:
     """yuimol チャットパネルにログメッセージを表示する（スレッドセーフ）。
-    tempファイル経由でコマンド長制限・エスケープ問題を回避する。
+    base64 エンコードでコマンドに埋め込む（ローカル PyMOL + リモート MCP 構成対応）。
     """
     try:
-        tmp = f"/tmp/yuimol_panellog_{os.getpid()}.txt"
-        with open(tmp, "w", encoding="utf-8") as f:
-            f.write(text)
+        encoded = base64.b64encode(text.encode("utf-8")).decode("ascii")
         proxy.do(
-            f"/import yuimol.gui as _g;"
-            f" _g.log_from_mcp(open('{tmp}', encoding='utf-8').read(), '{role}')"
+            f"/import base64 as _b64, yuimol.gui as _g;"
+            f" _g.log_from_mcp(_b64.b64decode('{encoded}').decode('utf-8'), '{role}')"
         )
     except Exception:
         pass
@@ -127,31 +119,30 @@ def _log_sasa_panel(
 def _get_struct_residues(
     proxy: xmlrpc.client.ServerProxy, object_name: str, chain: str | None
 ) -> list[tuple[int, str]]:
-    """PyMOL から (resi番号, 1文字アミノ酸) のリストを取得する。"""
-    out_path = f"/tmp/yuimol_residues_{os.getpid()}.json"
-
+    """PyMOL から (resi番号, 1文字アミノ酸) のリストを取得する。
+    proxy.get_pdbstr() で PDB 文字列を取得してリモート側で解析する
+    （ファイル不要・ローカル PyMOL + リモート MCP 構成対応）。
+    """
     sel = f"({object_name}) and name CA"
     if chain:
         sel += f" and chain {chain}"
 
-    _run_script_in_pymol(
-        proxy,
-        f'import json\n'
-        f'data = [(int(a.resi), a.resn) for a in cmd.get_model("{sel}").atom]\n'
-        f'open("{out_path}", "w").write(json.dumps(data))\n',
-    )
-
     try:
-        if not os.path.exists(out_path):
-            return []
-        with open(out_path) as f:
-            data = json.load(f)
-        return sorted((int(resi), THREE_TO_ONE.get(resn, "X")) for resi, resn in data)
-    finally:
-        try:
-            os.unlink(out_path)
-        except Exception:
-            pass
+        pdb_str = proxy.get_pdbstr(sel)
+    except Exception:
+        return []
+
+    residues: dict[int, str] = {}
+    for line in pdb_str.splitlines():
+        if line.startswith(("ATOM  ", "HETATM")):
+            try:
+                resn = line[17:20].strip()
+                resi = int(line[22:26].strip())
+                if resi not in residues:
+                    residues[resi] = resn
+            except (ValueError, IndexError):
+                continue
+    return sorted((resi, THREE_TO_ONE.get(resn, "X")) for resi, resn in residues.items())
 
 
 # ---------------------------------------------------------------------------
@@ -236,28 +227,14 @@ def get_loaded_structures() -> str:
     PyMOL に現在ロードされているオブジェクト名のリストを返す。
     色付けや操作を行う前にオブジェクト名を確認するために使う。
     """
-    out_path = f"/tmp/yuimol_names_{os.getpid()}.json"
     try:
         proxy = _proxy()
-        _run_script_in_pymol(
-            proxy,
-            f'import json\n'
-            f'open("{out_path}", "w").write(json.dumps(cmd.get_names("objects")))\n',
-        )
-        if not os.path.exists(out_path):
-            return json.dumps({"objects": []})
-        with open(out_path) as f:
-            names = json.load(f)
-        return json.dumps({"objects": names})
+        names = proxy.get_names("objects")
+        return json.dumps({"objects": list(names)})
     except ConnectionRefusedError:
         return _CONN_ERROR
     except Exception as e:
         return f"Error: {e}"
-    finally:
-        try:
-            os.unlink(out_path)
-        except Exception:
-            pass
 
 
 @mcp.tool()
@@ -562,68 +539,70 @@ def get_surface_residues(
     except Exception:
         return _CONN_ERROR
 
-    out_path = f"/tmp/yuimol_sasa_{os.getpid()}.json"
     chain_part = f" and chain {chain}" if chain else ""
     sel = f"({object_name}){chain_part}"
 
-    script = f"""
-import json
-from collections import defaultdict
-
-sel = "{sel}"
-
-# Save current b-factors before overwriting with SASA
-saved_b = {{}}
-cmd.iterate(sel, "saved_b[(chain, resi, name)] = b", space={{"saved_b": saved_b}})
-
-# Compute per-atom SASA stored into b-factors
-cmd.set("dot_solvent", 1)
-cmd.set("dot_density", 2)
-cmd.get_area(sel, load_b=1)
-
-# Aggregate SASA per residue
-resi_sasa = defaultdict(float)
-resi_name = {{}}
-
-def _acc(chain, resi, resn, b):
-    resi_sasa[(chain, resi)] += b
-
-def _acc_ca(chain, resi, resn, b):
-    resi_name[(chain, resi)] = resn
-
-cmd.iterate(sel, "_acc(chain, resi, resn, b)", space={{"_acc": _acc}})
-cmd.iterate(sel + " and name CA", "_acc_ca(chain, resi, resn, b)", space={{"_acc_ca": _acc_ca}})
-
-# Restore original b-factors
-cmd.alter(sel, "b = saved_b.get((chain, resi, name), b)", space={{"saved_b": saved_b}})
-
-result = []
-for (ch, ri), sasa in sorted(resi_sasa.items(), key=lambda x: (-x[1], x[0])):
-    result.append({{
-        "chain": ch,
-        "resi": int(ri),
-        "resn": resi_name.get((ch, ri), "UNK"),
-        "sasa": round(sasa, 1),
-    }})
-
-open("{out_path}", "w").write(json.dumps(result))
-"""
-
     try:
-        _run_script_in_pymol(proxy, script)
+        # Step 1: 元の B 因子を保存（PDB 文字列として取得）
+        original_pdb = proxy.get_pdbstr(sel)
+        orig_bfactors: dict[str, float] = {}
+        for line in original_pdb.splitlines():
+            if line.startswith(("ATOM  ", "HETATM")):
+                try:
+                    atom_name = line[12:16].strip()
+                    chain_id = line[21]
+                    resi = line[22:26].strip()
+                    b = float(line[60:66].strip() or "0")
+                    orig_bfactors[f"{chain_id}_{resi}_{atom_name}"] = b
+                except (ValueError, IndexError):
+                    continue
 
-        if not os.path.exists(out_path):
-            return json.dumps({"error": "SASA calculation failed (no output file)"})
+        # Step 2: SASA を計算（B 因子カラムに上書き）
+        _run_script_in_pymol(proxy, (
+            f'cmd.set("dot_solvent", 1)\n'
+            f'cmd.set("dot_density", 2)\n'
+            f'cmd.get_area("{sel}", load_b=1)\n'
+        ))
 
-        with open(out_path) as f:
-            all_residues: list[dict] = json.load(f)
+        # Step 3: SASA が入った PDB を取得してリモート側で残基ごとに集計
+        sasa_pdb = proxy.get_pdbstr(sel)
+        from collections import defaultdict
+        resi_sasa: dict[tuple[str, str], float] = defaultdict(float)
+        resi_resn: dict[tuple[str, str], str] = {}
+        for line in sasa_pdb.splitlines():
+            if line.startswith(("ATOM  ", "HETATM")):
+                try:
+                    resn = line[17:20].strip()
+                    chain_id = line[21]
+                    resi = line[22:26].strip()
+                    b = float(line[60:66].strip() or "0")
+                    key = (chain_id, resi)
+                    resi_sasa[key] += b
+                    resi_resn.setdefault(key, resn)
+                except (ValueError, IndexError):
+                    continue
 
+        # Step 4: 元の B 因子を復元（base64 でスクリプトに埋め込む）
+        bfactor_b64 = base64.b64encode(json.dumps(orig_bfactors).encode()).decode()
+        _run_script_in_pymol(proxy, (
+            f'import base64, json\n'
+            f'orig_b = json.loads(base64.b64decode("{bfactor_b64}").decode())\n'
+            f'cmd.alter("{sel}", "b = orig_b.get(chain+\'_\'+resi+\'_\'+name, b)", space={{"orig_b": orig_b}})\n'
+        ))
+
+        # Step 5: 結果を構築
+        all_residues: list[dict] = [
+            {
+                "chain": ch,
+                "resi": int(ri),
+                "resn": resi_resn.get((ch, ri), "UNK"),
+                "sasa": round(sasa, 1),
+            }
+            for (ch, ri), sasa in sorted(resi_sasa.items(), key=lambda x: (-x[1], x[0]))
+        ]
         surface = [r for r in all_residues if r["sasa"] >= sasa_threshold]
 
-        # セッション保存：resi → sasa のマップ
         _sasa_log[object_name] = {r["resi"]: r["sasa"] for r in all_residues}
-
-        # チャットパネルに SASA サマリーを表示
         _log_sasa_panel(proxy, object_name, all_residues, surface, sasa_threshold)
 
         return json.dumps({
@@ -639,11 +618,6 @@ open("{out_path}", "w").write(json.dumps(result))
         return _CONN_ERROR
     except Exception as e:
         return f"Error: {e}"
-    finally:
-        try:
-            os.unlink(out_path)
-        except Exception:
-            pass
 
 
 @mcp.tool()
