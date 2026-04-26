@@ -56,6 +56,7 @@ LLM は UniProt 位置番号をそのまま指定すれば良い。PDB 番号へ
 ### MCP サーバー（mcp_server.py）での作業
 
 - Claude Code から MCP ツールで構造解析・調査を行ったあとは、必ず `post_to_panel` で結果テキストをユーザーの PyMOL GUI パネルに送ること
+- SASA (`get_area`)、RMSD (`align` / `rms_cur`)、距離・角度・二面角など数値を返す計算を行ったあとも、必ず結果を `post_to_panel` でパネルに表示すること
 - `post_to_panel` の `role` は通常 `"assistant"` を使う。HTML を渡す場合は `"html"` にする
 - UniProt アノテーションと色付けを行ったあとは、`show_annotation_summary` を呼んで結果テーブルをパネルに表示すること（`post_to_panel` で手書きの HTML を作るのではなく、こちらを優先する）
 

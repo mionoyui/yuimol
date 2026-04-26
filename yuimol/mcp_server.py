@@ -187,6 +187,19 @@ def run_pymol_command(command: str) -> str:
     """
     try:
         proxy = _proxy()
+        parts = command.strip().split(None, 1)
+        method_name = parts[0]
+        args = [a.strip() for a in parts[1].split(",")] if len(parts) > 1 else []
+        method = getattr(proxy, method_name, None)
+        if callable(method) and method_name != "do":
+            try:
+                result = method(*args)
+                result_str = str(result).strip() if result is not None else ""
+                if result_str and result_str != "-1":
+                    return f"OK: {command}\n{result_str}"
+                return f"OK: {command}"
+            except Exception:
+                pass
         proxy.do(command)
         return f"OK: {command}"
     except ConnectionRefusedError:
